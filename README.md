@@ -58,6 +58,9 @@ You should see `llm-prep` in the list of connected servers.
 3. **`set_project_config`** - Configure project-specific settings
 4. **`list_recent_contexts`** - View recently generated contexts
 5. **`clean_temp_notes`** - Clean up temporary note files
+6. **`get_tree_ignore`** - View current ignore patterns and see suggested additions  
+7. **`update_tree_ignore`** - Set/add/remove/auto-configure tree ignore patterns with validation and history  
+8. **`analyze_project_structure`** - Scan the project to detect type, large directories, and propose optimal patterns
 
 ### Workflow Example: Debugging an Issue
 
@@ -134,9 +137,21 @@ your_project/
   "output_dir": "context_reports",
   "default_context_dumps": [
     {"file": "docs/architecture.md", "title": "System Architecture"}
-  ]
+  ],
+  "tree_ignore_history": [
+    {"timestamp":"2025-08-14T10:40:00","patterns":"node_modules|dist|.next","action":"auto","reason":"Initial JS setup"}
+  ],
+  "project_type": "javascript",
+  "auto_detected_patterns": ["node_modules","dist",".next","coverage"]
 }
 ```
+
+### Typical Tree Ignore Workflow
+
+1. `/mcp` → `analyze_project_structure` - Scan the project
+2. `get_tree_ignore` - Check current vs. suggested patterns
+3. `update_tree_ignore(action="auto")` - Auto-configure based on project type
+   - Or `update_tree_ignore(action="add", patterns=["custom_dir"])` for manual additions
 
 ### Environment Variables
 

@@ -158,6 +158,58 @@ class TestRunner:
             print(f"   ❌ clean_temp_notes: {e}")
             return False
     
+    async def t_tree_ignore_tools(self):
+        """Test tree ignore tools"""
+        try:
+            # Import the new tools
+            from mcp_server_fastmcp import (
+                get_tree_ignore, update_tree_ignore, analyze_project_structure,
+                GetTreeIgnoreInput, UpdateTreeIgnoreInput, AnalyzeProjectInput
+            )
+            
+            # Test analyze
+            res = await analyze_project_structure(AnalyzeProjectInput(
+                project_path=str(self.test_dir)
+            ))
+            assert "Project:" in res, "Analyze didn't return project info"
+            
+            # Test add patterns
+            res = await update_tree_ignore(UpdateTreeIgnoreInput(
+                project_path=str(self.test_dir),
+                action="add",
+                patterns=["__pycache__", "*.pyc", "dist"]
+            ))
+            assert "✅" in res, "Add patterns failed"
+            
+            # Test get current
+            res = await get_tree_ignore(GetTreeIgnoreInput(
+                project_path=str(self.test_dir)
+            ))
+            assert "__pycache__" in res, "Pattern not found after adding"
+            
+            # Test remove
+            res = await update_tree_ignore(UpdateTreeIgnoreInput(
+                project_path=str(self.test_dir),
+                action="remove",
+                patterns=["dist"]
+            ))
+            assert "✅" in res, "Remove pattern failed"
+            
+            # Test auto-configure
+            res = await update_tree_ignore(UpdateTreeIgnoreInput(
+                project_path=str(self.test_dir),
+                action="auto",
+                auto_detect=True,
+                reason="Auto test"
+            ))
+            assert "✅" in res, "Auto-configure failed"
+            
+            print("   ✅ tree ignore tools")
+            return True
+        except Exception as e:
+            print(f"   ❌ tree ignore tools: {e}")
+            return False
+    
     async def run_all(self):
         """Run all tests"""
         await self.setup()
@@ -165,6 +217,7 @@ class TestRunner:
         tests = [
             self.t_create_debug_notes,
             self.t_set_project_config,
+            self.t_tree_ignore_tools,
             self.t_prepare_context,
             self.t_list_recent_contexts,
             self.t_clean_temp_notes

@@ -14,7 +14,12 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from llm_prep import LLMContextPrep
-from config import ProjectConfig, load_project_config, save_project_config
+from config import (
+    ProjectConfig, load_project_config, save_project_config,
+    split_patterns, join_patterns, validate_ignore_patterns, normalize_patterns,
+    suggest_patterns_for_project, analyze_project
+)
+from typing import Literal
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +64,19 @@ class CleanTempNotesInput(BaseModel):
     """Input model for clean_temp_notes tool"""
     project_path: str = Field(description="Path to the project root")
     older_than_days: int = Field(default=7, description="Delete files older than this many days")
+
+class GetTreeIgnoreInput(BaseModel):
+    project_path: str = Field(description="Path to the project root")
+
+class UpdateTreeIgnoreInput(BaseModel):
+    project_path: str = Field(description="Path to the project root")
+    action: Literal["set","add","remove","auto"] = Field(default="add", description="How to apply changes")
+    patterns: Optional[List[str]] = Field(default=None, description="Patterns for set/add/remove")
+    auto_detect: bool = Field(default=False, description="If true, analyze project to select patterns")
+    reason: Optional[str] = Field(default=None, description="Why this change is made (stored in history)")
+
+class AnalyzeProjectInput(BaseModel):
+    project_path: str = Field(description="Path to the project root")
 
 # Tools
 @mcp.tool()
@@ -237,6 +255,142 @@ async def clean_temp_notes(input: CleanTempNotesInput) -> str:
     except Exception as e:
         logger.error(f"Error cleaning notes: {e}")
         return f"❌ Error cleaning notes: {str(e)}"
+
+@mcp.tool()
+async def get_tree_ignore(input: GetTreeIgnoreInput) -> str:
+    """Get current tree ignore patterns and suggestions."""
+    try:
+        project_path = Path(input.project_path).resolve()
+        config = load_project_config(project_path)
+        current = split_patterns(config.tree_ignore)
+        info = analyze_project(project_path)
+        sugg = suggest_patterns_for_project(project_path)
+
+        recommended_adds = [p for p in (sugg["critical"] + sugg["recommended"]) if p.lower() not in {c.lower() for c in current}]
+        summary = [
+            f"📁 Project: {project_path}",
+            f"🧠 Detected project type: {info['project_type']}",
+            "",
+            "Current ignore patterns:",
+            f"  " + (config.tree_ignore or "(none)"),
+            "",
+            "Suggested additions (critical + recommended):",
+            ("  " + ", ".join(recommended_adds)) if recommended_adds else "  (none)",
+        ]
+        return "\n".join(summary)
+    except Exception as e:
+        logger.error(f"get_tree_ignore error: {e}")
+        return f"❌ Error: {e}"
+
+@mcp.tool()
+async def update_tree_ignore(input: UpdateTreeIgnoreInput) -> str:
+    """Update tree ignore patterns with intelligent suggestions & history."""
+    try:
+        project_path = Path(input.project_path).resolve()
+        config = load_project_config(project_path)
+        now = datetime.now().isoformat()
+
+        current = split_patterns(config.tree_ignore)
+        result_msg = ""
+
+        if input.action == "auto":
+            sugg = suggest_patterns_for_project(project_path)
+            new_list = normalize_patterns(sugg["critical"] + sugg["recommended"])
+            v = validate_ignore_patterns(new_list)
+            if v["errors"]:
+                return "❌ " + "; ".join(v["errors"])
+            config.tree_ignore = v["joined"]
+            config.project_type = analyze_project(project_path)["project_type"]
+            config.auto_detected_patterns = new_list
+            result_msg = f"Auto-configured patterns ({len(new_list)}): {config.tree_ignore}"
+
+        elif input.action in {"set", "add", "remove"}:
+            patterns = normalize_patterns(input.patterns or [])
+            if input.action == "set":
+                v = validate_ignore_patterns(patterns)
+                if v["errors"]:
+                    return "❌ " + "; ".join(v["errors"])
+                config.tree_ignore = v["joined"]
+                result_msg = f"Set patterns to: {config.tree_ignore}"
+
+            elif input.action == "add":
+                merged = current + [p for p in patterns if p.lower() not in {c.lower() for c in current}]
+                v = validate_ignore_patterns(merged)
+                if v["errors"]:
+                    return "❌ " + "; ".join(v["errors"])
+                config.tree_ignore = v["joined"]
+                result_msg = f"Added: {', '.join(patterns)}"
+
+            else:  # remove
+                lower_remove = {p.lower() for p in patterns}
+                remaining = [p for p in current if p.lower() not in lower_remove]
+                v = validate_ignore_patterns(remaining)
+                # removing can't create errors except length; still check
+                config.tree_ignore = v["joined"]
+                result_msg = f"Removed: {', '.join(patterns)}"
+
+        else:
+            return "❌ Unknown action"
+
+        # record history
+        config.tree_ignore_history = config.tree_ignore_history or []
+        config.tree_ignore_history.insert(0, {
+            "timestamp": now,
+            "patterns": config.tree_ignore,
+            "action": input.action,
+            "reason": input.reason or "",
+        })
+        config.tree_ignore_history = config.tree_ignore_history[:50]
+
+        save_project_config(project_path, config)
+
+        # surface warnings if any
+        warnings = validate_ignore_patterns(split_patterns(config.tree_ignore))["warnings"]
+        warn_block = ("\n⚠️  " + "\n⚠️  ".join(warnings)) if warnings else ""
+        return f"✅ {result_msg}{warn_block}"
+
+    except Exception as e:
+        logger.error(f"update_tree_ignore error: {e}")
+        return f"❌ Error updating tree ignore: {e}"
+
+@mcp.tool()
+async def analyze_project_structure(input: AnalyzeProjectInput) -> str:
+    """Analyze project and suggest optimal ignore patterns."""
+    try:
+        project_path = Path(input.project_path).resolve()
+        info = analyze_project(project_path)
+        sugg = suggest_patterns_for_project(project_path)
+
+        lines = [
+            f"📁 Project: {project_path}",
+            f"🧠 Detected type: {info['project_type']}",
+            "",
+            "Indicators:",
+            f"  {info['indicators']}",
+            f"Build tools: {', '.join(info['build_tools']) if info['build_tools'] else '(none)'}",
+            "",
+            "Large directories (>100MB):"
+        ]
+        if info["big_dirs"]:
+            for d in info["big_dirs"]:
+                lines.append(f"  - {d['name']} ~ {d['bytes']:,} bytes")
+        else:
+            lines.append("  (none)")
+
+        lines += [
+            "",
+            "Compiled/binary footprints found:",
+            f"  {', '.join(info['compiled_present']) if info['compiled_present'] else '(none)'}",
+            "",
+            "Suggested patterns:",
+            f"  critical: {', '.join(sugg['critical']) or '(none)'}",
+            f"  recommended: {', '.join(sugg['recommended']) or '(none)'}",
+            f"  optional: {', '.join(sugg['optional']) or '(none)'}",
+        ]
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"analyze_project_structure error: {e}")
+        return f"❌ Error analyzing project: {e}"
 
 # Prompts
 @mcp.prompt()

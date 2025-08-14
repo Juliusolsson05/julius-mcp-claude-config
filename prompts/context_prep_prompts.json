@@ -78,7 +78,8 @@
       "Use descriptive notes for each file to explain its relevance",
       "Keep context documents under 2MB for best performance",
       "Archive old context reports periodically",
-      "Use project config to set default ignore patterns"
+      "Use project config to set default ignore patterns",
+      "When you open a project, run analyze_project_structure → review → update_tree_ignore(action=\"auto\") before generating context"
     ]
   }
 }
