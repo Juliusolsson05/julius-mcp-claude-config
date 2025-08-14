@@ -7,31 +7,26 @@ services:
       dockerfile: docker/Dockerfile
     image: llm-context-prep-mcp:latest
     container_name: llm-context-prep-mcp
-    
-    # For stdio MCP server mode
-    stdin_open: true
-    tty: true
-    
+
+    # Run HTTP transport so you get a URL endpoint (change to sse if you prefer)
+    stdin_open: false
+    tty: false
+    command: ["python", "src/mcp_server_fastmcp.py", "--transport", "http", "--port", "8847"]
+
+    ports:
+      - "8847:8847"
+
     volumes:
-      # Mount the workspace directory
       - ${WORKSPACE_DIR:-./workspace}:/workspace
-      # Optional: Mount additional directories
-      # - ${HOME}/projects:/projects:ro
-    
+
     environment:
-      # MCP Configuration
       - MCP_DEBUG=${MCP_DEBUG:-false}
       - MCP_MAX_FILE_SIZE=${MCP_MAX_FILE_SIZE:-10485760}
       - MCP_MAX_CONTEXT_SIZE=${MCP_MAX_CONTEXT_SIZE:-52428800}
-      
-      # Docker mode flag
       - MCP_DOCKER_MODE=true
       - MCP_WORKSPACE_DIR=/workspace
-      
-      # Optional: Additional configuration
       - MCP_ALLOWED_EXTENSIONS=${MCP_ALLOWED_EXTENSIONS:-.py,.js,.ts,.md,.txt,.json,.yaml,.yml}
-    
-    # Resource limits
+
     deploy:
       resources:
         limits:
@@ -40,24 +35,12 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    
-    # Security options
+
     security_opt:
       - no-new-privileges:true
-    read_only: false  # Need write access for context reports
-    
-    # Network configuration (if needed for SSE/HTTP mode)
-    # ports:
-    #   - "8080:8080"
-    # networks:
-    #   - mcp-network
+    read_only: false
 
-# Optional: Network configuration for HTTP/SSE mode
-# networks:
-#   mcp-network:
-#     driver: bridge
-
-# Optional: Named volumes for persistent storage
 volumes:
   workspace:
     driver: local
+

@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 
 
 @dataclass
@@ -25,9 +25,11 @@ class ProjectConfig:
     @classmethod
     def from_dict(cls, data: Dict) -> 'ProjectConfig':
         """Create from dictionary"""
+        # Get defaults from dataclass fields
+        defaults = {f.name: f.default for f in fields(cls) if f.default is not field}
         return cls(
-            tree_ignore=data.get('tree_ignore', cls.tree_ignore.__default__),
-            output_dir=data.get('output_dir', cls.output_dir.__default__),
+            tree_ignore=data.get('tree_ignore', defaults.get('tree_ignore', "bin|lib|*.log|logs|__pycache__|*.csv|*.pyc|.git|.env|*.db|node_modules|.venv|venv")),
+            output_dir=data.get('output_dir', defaults.get('output_dir', "context_reports")),
             default_context_dumps=data.get('default_context_dumps', []),
             recent_contexts=data.get('recent_contexts', [])
         )
@@ -77,18 +79,33 @@ class ServerConfig:
         self.debug = os.getenv('MCP_DEBUG', 'false').lower() == 'true'
         self.max_file_size = int(os.getenv('MCP_MAX_FILE_SIZE', '10485760'))  # 10MB default
         self.max_context_size = int(os.getenv('MCP_MAX_CONTEXT_SIZE', '52428800'))  # 50MB default
-        self.allowed_extensions = os.getenv(
+        
+        # Parse allowed extensions (only those that start with a dot)
+        exts = os.getenv(
             'MCP_ALLOWED_EXTENSIONS',
             '.py,.js,.ts,.jsx,.tsx,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.scala,.r,.m,.h,.hpp,.sh,.bash,.zsh,.fish,.md,.txt,.json,.yaml,.yml,.toml,.xml,.html,.css,.scss,.sass,.less,.sql,.graphql,.proto,.dockerfile,.makefile,.cmake,.gradle,.maven'
         ).split(',')
+        self.allowed_extensions = [e.strip().lower() for e in exts if e.strip().startswith('.')]
+        
+        # Common files without extensions
+        self.allowed_basenames = {'dockerfile', 'makefile', 'license', 'readme', 'readme.md'}
         
         # Docker-specific configuration
         self.docker_mode = os.getenv('MCP_DOCKER_MODE', 'false').lower() == 'true'
         self.workspace_dir = os.getenv('MCP_WORKSPACE_DIR', '/workspace')
         
     def is_file_allowed(self, file_path: Path) -> bool:
-        """Check if a file is allowed based on extension"""
-        return file_path.suffix.lower() in self.allowed_extensions
+        """Check if a file is allowed based on extension or basename"""
+        try:
+            # Check if it has an allowed extension
+            if file_path.suffix.lower() in self.allowed_extensions:
+                return True
+            # Check if it's an allowed suffix-less file
+            if file_path.name.lower() in self.allowed_basenames:
+                return True
+            return False
+        except Exception:
+            return False
     
     def is_file_size_allowed(self, file_path: Path) -> bool:
         """Check if file size is within limits"""

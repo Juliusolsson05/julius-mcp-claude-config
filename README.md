@@ -10,47 +10,41 @@ When debugging complex issues or implementing features across multiple files, AI
 2. **MCP Server** generates a comprehensive context document
 3. **Upload** the document to Claude.ai for deep analysis with higher token limits
 
-## 🚀 Quick Start with Docker
+## 🚀 Quick Start
 
-### Option 1: Run Pre-built Image (Fastest)
-
-```bash
-# Pull and run the image
-docker run -it --rm \
-  -v $(pwd):/workspace \
-  llm-context-prep-mcp:latest
-
-# Or use docker-compose
-docker-compose -f docker/docker-compose.yml up
-```
-
-### Option 2: Build from Source
+### Option A — Claude Code (recommended, STDIO)
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/llm-context-prep-mcp.git
-cd llm-context-prep-mcp
-
-# Build the Docker image
+# Build the image
 docker build -f docker/Dockerfile -t llm-context-prep-mcp:latest .
 
-# Run the container
-docker run -it --rm \
-  -v $(pwd):/workspace \
-  llm-context-prep-mcp:latest
+# Add to Claude Code (spawns STDIO server inside the container)
+claude mcp add llm-prep -- docker run -i --rm -v "$(pwd):/workspace" llm-context-prep-mcp:latest
 ```
 
-## 🔧 Installation for Claude Code
-
-### 1. Add the MCP Server
+### Option B — Local Python (STDIO/SSE/HTTP)
 
 ```bash
-# Using Docker (recommended)
-claude mcp add llm-prep --env WORKSPACE_DIR=$(pwd) -- \
-  docker run -i --rm -v $(pwd):/workspace llm-context-prep-mcp:latest
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 
-# Or using local Python
-claude mcp add llm-prep -- python /path/to/llm-context-prep-mcp/src/mcp_server.py
+# STDIO
+claude mcp add llm-prep -- python src/mcp_server_fastmcp.py --transport stdio
+
+# SSE (URL):
+python src/mcp_server_fastmcp.py --transport sse --port 8847
+claude mcp add --transport sse llm-prep http://localhost:8847/sse
+
+# HTTP (URL):
+python src/mcp_server_fastmcp.py --transport http --port 8847
+claude mcp add --transport http --url http://localhost:8847/mcp llm-prep
+```
+
+### Docker Compose (HTTP)
+
+```bash
+docker compose -f docker/docker-compose.yml up
+# Endpoint: http://localhost:8847/mcp
 ```
 
 ### 2. Verify Installation

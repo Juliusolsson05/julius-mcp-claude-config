@@ -67,6 +67,26 @@ test-coverage:
 	@echo "✅ Coverage report generated in htmlcov/"
 
 # Claude Code integration
+add-command:
+	@echo "==============================================="
+	@echo "Add MCP Server to Claude Code"
+	@echo "==============================================="
+	@echo ""
+	@echo "Option 1: Connect via localhost (SSE transport) - Port 8847:"
+	@echo "------------------------------------------------"
+	@echo "1. First, run the server in a terminal:"
+	@echo "   python src/mcp_server.py --transport sse --port 8847"
+	@echo ""
+	@echo "2. Then add to Claude Code:"
+	@echo "   claude mcp add --transport sse llm-prep http://localhost:8847/sse"
+	@echo ""
+	@echo "Option 2: Connect via stdio (local file):"
+	@echo "------------------------------------------------"
+	@echo "   claude mcp add llm-prep -- python $(shell pwd)/src/mcp_server.py"
+	@echo ""
+	@echo "Test with: /mcp in Claude Code"
+	@echo "=============================================="
+
 claude-add:
 	@echo "Adding MCP server to Claude Code (Docker)..."
 	claude mcp add llm-prep \
@@ -131,6 +151,33 @@ release: clean format lint test docker-build
 	@echo "  1. Update version in README.md"
 	@echo "  2. Tag the release: git tag v1.0.0"
 	@echo "  3. Push to registry: docker push ..."
+
+
+
+
+# Prints the full STDIO command for Claude Code, then asks to copy it
+claude-stdio-cmd:
+	@BASE=$$(pwd -P); \
+	if [ -x venv/bin/python ]; then PY="$$BASE/venv/bin/python"; \
+	elif command -v python3 >/dev/null 2>&1; then PY=$$(command -v python3); \
+	else PY=$$(command -v python); fi; \
+	SCRIPT="$$BASE/src/mcp_server_fastmcp.py"; \
+	CMD="claude mcp add llm-prep -- \"$$PY\" \"$$SCRIPT\" --transport stdio"; \
+	echo "$$CMD"; \
+	printf "Copy to clipboard? [y/N] "; \
+	read ans; \
+	case "$$ans" in \
+	  y|Y) \
+	    if command -v pbcopy >/dev/null 2>&1; then printf "%s" "$$CMD" | pbcopy && echo "✅ Copied to clipboard (pbcopy)."; \
+	    elif command -v xclip >/dev/null 2>&1; then printf "%s" "$$CMD" | xclip -selection clipboard && echo "✅ Copied to clipboard (xclip)."; \
+	    elif command -v wl-copy >/dev/null 2>&1; then printf "%s" "$$CMD" | wl-copy && echo "✅ Copied to clipboard (wl-copy)."; \
+	    else echo "⚠️  No clipboard tool found (pbcopy/xclip/wl-copy)."; fi ;; \
+	  *) echo "Skipped copying."; ;; \
+	esac
+
+
+
+
 
 # Show current configuration
 config:

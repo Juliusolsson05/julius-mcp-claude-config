@@ -36,6 +36,7 @@ WORKDIR /app
 # Copy application files
 COPY --chown=mcp:mcp src/ ./src/
 COPY --chown=mcp:mcp prompts/ ./prompts/
+COPY --chown=mcp:mcp scripts/ ./scripts/
 
 # Switch to non-root user
 USER mcp
@@ -56,5 +57,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Volume for workspace
 VOLUME ["/workspace"]
 
-# Default command - run as stdio MCP server
-CMD ["python", "src/mcp_server.py"]
+# Default command - run as stdio MCP server (best for Claude Code)
+CMD ["python", "src/mcp_server_fastmcp.py", "--transport", "stdio"]
+
