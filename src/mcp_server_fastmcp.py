@@ -7,17 +7,17 @@ Provides tools for preparing comprehensive context documents for LLMs
 import os
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from llm_prep import LLMContextPrep
 from config import (
     ProjectConfig, load_project_config, save_project_config,
     split_patterns, join_patterns, validate_ignore_patterns, normalize_patterns,
-    suggest_patterns_for_project, analyze_project
+    suggest_patterns_for_project, analyze_project, server_config
 )
 from typing import Literal
 
@@ -31,15 +31,31 @@ logger = logging.getLogger(__name__)
 # Create FastMCP server
 mcp = FastMCP("llm-context-prep")
 
+# Enhanced Pydantic models with clear validation
+class FileSpec(BaseModel):
+    """Specification for a file to include in context"""
+    model_config = ConfigDict(extra='allow')
+    path: str = Field(description="Path relative to project root (e.g., 'src/app.py').")
+    note: Optional[str] = Field(default=None, description="Note about why this file matters.")
+
+class DumpSpec(BaseModel):
+    """Specification for a context dump (markdown file)"""
+    model_config = ConfigDict(extra='allow')
+    file: str = Field(description="Markdown file path (e.g., '.llm_prep_notes/issue.md').")
+    title: Optional[str] = Field(default=None, description="Section title for this dump.")
+
 # Pydantic models for tool inputs
 class PrepareContextInput(BaseModel):
     """Input model for prepare_context tool"""
-    project_path: str = Field(description="Path to the project root directory")
-    files: Optional[List[Dict[str, Any]]] = Field(default=None, description="List of files to include with optional notes")
-    context_dumps: Optional[List[Dict[str, str]]] = Field(default=None, description="List of markdown files to include as context dumps")
-    general_notes: Optional[List[str]] = Field(default=None, description="Quick context notes")
-    output_name: Optional[str] = Field(default=None, description="Output filename (saved to context_reports/)")
-    tree_ignore: Optional[str] = Field(default=None, description="Patterns to ignore in tree generation")
+    project_path: str = Field(description="Absolute path to project root.")
+    files: Optional[List[Union[FileSpec, Dict[str, Any]]]] = Field(default=None, description="Files to include with full content.")
+    context_dumps: Optional[List[Union[DumpSpec, Dict[str, Any]]]] = Field(default=None, description="Markdown notes/docs appended as sections.")
+    general_notes: Optional[List[str]] = Field(default=None, description="Quick bullet notes.")
+    general_note_files: Optional[List[str]] = Field(default=None, description="Append these .md files into General Notes (at end).")
+    output_name: Optional[str] = Field(default=None, description="Filename saved under project's output_dir.")
+    tree_ignore: Optional[str] = Field(default=None, description="Pipe-separated glob patterns (e.g., 'node_modules|*.pyc|.git').")
+    tree_max_depth: Optional[int] = Field(default=3, description="Max depth for tree rendering (passed to `tree -L`).")
+    dry_run: Optional[bool] = Field(default=False, description="If true, validate & preview, do not write file.")
 
 class CreateDebugNotesInput(BaseModel):
     """Input model for create_debug_notes tool"""
@@ -78,6 +94,42 @@ class UpdateTreeIgnoreInput(BaseModel):
 class AnalyzeProjectInput(BaseModel):
     project_path: str = Field(description="Path to the project root")
 
+# Helper functions for backward compatibility and path handling
+def _coerce_file_spec(d: dict) -> FileSpec:
+    """Convert dict to FileSpec with synonym support"""
+    if isinstance(d, FileSpec):
+        return d
+    return FileSpec(
+        path=d.get("path") or d.get("file"),
+        note=d.get("note") or d.get("notes") or d.get("comment") or d.get("description")
+    )
+
+def _coerce_dump_spec(d: dict) -> DumpSpec:
+    """Convert dict to DumpSpec with synonym support"""
+    if isinstance(d, DumpSpec):
+        return d
+    return DumpSpec(
+        file=d.get("file") or d.get("path"),
+        title=d.get("title") or d.get("name") or d.get("notes") or d.get("description")
+    )
+
+def _fix_path(project_path: Path, p: str) -> Path:
+    """Fix common path mistakes like leading slashes"""
+    raw = Path(p)
+    if raw.is_absolute():
+        # If absolute and under project root, allow; else try stripping leading '/'
+        try:
+            raw.relative_to(project_path)
+            return raw
+        except Exception:
+            maybe = project_path / p.lstrip(os.sep)
+            if maybe.exists():
+                logger.warning(f"Adjusted absolute path '{p}' to project-relative '{maybe.relative_to(project_path)}'.")
+                return maybe
+            # Fall back to original absolute (will fail later if nonexistent)
+            return raw
+    return project_path / raw
+
 # Tools
 @mcp.tool()
 async def prepare_context(input: PrepareContextInput) -> str:
@@ -96,31 +148,73 @@ async def prepare_context(input: PrepareContextInput) -> str:
         if tree_ignore:
             prep.tree_ignore = tree_ignore
         
-        # Add files
+        # Set tree max depth
+        prep.tree_max_depth = input.tree_max_depth or 3
+        
+        # Prepare lists for tracking what's included
+        included_files = []
+        included_dumps = []
+        included_note_files = []
+        
+        # Add files with path fixing
         if input.files:
-            for file_info in input.files:
-                prep.add_file(file_info["path"], file_info.get("note"))
+            for file_spec in input.files:
+                # Handle both dict and FileSpec
+                if isinstance(file_spec, dict):
+                    file_spec = _coerce_file_spec(file_spec)
+                
+                # Fix path if needed
+                abs_path = _fix_path(project_path, file_spec.path)
+                prep.add_file(str(abs_path), file_spec.note)
+                included_files.append(str(abs_path.relative_to(project_path) if abs_path.is_relative_to(project_path) else abs_path))
         
         # Add context dumps
         if input.context_dumps:
-            for dump in input.context_dumps:
-                prep.add_context_dump_from_file(
-                    dump["file"],
-                    dump.get("title")
-                )
+            for dump_spec in input.context_dumps:
+                # Handle both dict and DumpSpec
+                if isinstance(dump_spec, dict):
+                    dump_spec = _coerce_dump_spec(dump_spec)
+                
+                prep.add_context_dump_from_file(dump_spec.file, dump_spec.title)
+                included_dumps.append(dump_spec.file)
         
         # Add default context dumps from config
         for dump in config.default_context_dumps:
-            if not any(d.get("file") == dump["file"] for d in (input.context_dumps or [])):
+            if not any(d.file == dump["file"] if hasattr(d, 'file') else d.get("file") == dump["file"] 
+                      for d in (input.context_dumps or [])):
                 prep.add_context_dump_from_file(
                     dump["file"],
                     dump.get("title")
                 )
+                included_dumps.append(dump["file"])
         
         # Add general notes
         if input.general_notes:
             for note in input.general_notes:
                 prep.add_general_note(note)
+        
+        # Append any .md files directly into General Notes (end of doc)
+        if input.general_note_files:
+            for path in input.general_note_files:
+                p = _fix_path(project_path, path)
+                try:
+                    content = p.read_text(encoding="utf-8")
+                    header = f"### {p.name}\n\n"
+                    prep.add_general_note(header + content)
+                    included_note_files.append(str(p.relative_to(project_path) if p.is_relative_to(project_path) else p))
+                except Exception as e:
+                    logger.warning(f"Could not read general_note_file {p}: {e}")
+        
+        # Handle dry-run
+        if input.dry_run:
+            return (
+                "🧪 DRY RUN — no file written\n"
+                f"• Files in focus ({len(included_files)}):\n  - " + "\n  - ".join(included_files or ["(none)"]) + "\n"
+                f"• Context dumps:\n  - " + "\n  - ".join(included_dumps or ["(none)"]) + "\n"
+                f"• General note files (end):\n  - " + "\n  - ".join(included_note_files or ["(none)"]) + "\n"
+                f"• tree_max_depth={prep.tree_max_depth}\n"
+                f"• tree_ignore='{prep.tree_ignore}'"
+            )
         
         # Determine output path
         output_dir = project_path / config.output_dir
@@ -141,13 +235,20 @@ async def prepare_context(input: PrepareContextInput) -> str:
         config.recent_contexts.insert(0, {
             "timestamp": datetime.now().isoformat(),
             "output": str(output_path.relative_to(project_path)),
-            "description": f"Context with {len(input.files or [])} files, {len(input.context_dumps or [])} dumps"
+            "description": f"Context with {len(included_files)} files, {len(included_dumps)} dumps"
         })
         config.recent_contexts = config.recent_contexts[:20]  # Keep last 20
         
         save_project_config(project_path, config)
         
-        return f"✅ Context document saved to: {output_path}\n📄 Size: {output_path.stat().st_size:,} bytes"
+        # Return standardized success output
+        return (
+            f"✅ Context document saved to: {output_path}\n"
+            f"📄 Size: {output_path.stat().st_size:,} bytes\n"
+            f"• Files in focus ({len(included_files)}):\n  - " + "\n  - ".join(included_files or ["(none)"]) + "\n"
+            f"• Context dumps:\n  - " + "\n  - ".join(included_dumps or ["(none)"]) + "\n"
+            f"• General note files (end):\n  - " + "\n  - ".join(included_note_files or ["(none)"])
+        )
         
     except Exception as e:
         logger.error(f"Error preparing context: {e}")
@@ -354,6 +455,15 @@ async def update_tree_ignore(input: UpdateTreeIgnoreInput) -> str:
         return f"❌ Error updating tree ignore: {e}"
 
 @mcp.tool()
+async def get_server_limits() -> str:
+    """Get server limits for file size and context size"""
+    return (
+        f"Max file size: {server_config.max_file_size:,} bytes\n"
+        f"Max context size: {server_config.max_context_size:,} bytes\n"
+        f"Allowed extensions: {', '.join(server_config.allowed_extensions)}"
+    )
+
+@mcp.tool()
 async def analyze_project_structure(input: AnalyzeProjectInput) -> str:
     """Analyze project and suggest optimal ignore patterns."""
     try:
@@ -419,6 +529,60 @@ Please follow these steps:
    - Review it and upload to Claude.ai for deep analysis
 
 Let's start by understanding the issue better. What error messages are you seeing?
+"""
+
+@mcp.prompt()
+async def notes_first(task_title: str, objectives: str) -> str:
+    """Guided workflow for creating notes before context"""
+    return f"""
+# Notes-First Workflow: {task_title}
+
+## Objectives:
+{objectives}
+
+## Step 1: Create Your Notes
+
+I'll help you create structured notes first. Use `create_debug_notes` with:
+```
+project_path: "[your project path]"
+filename: "{task_title}_notes.md"
+content: "[your markdown content]"
+```
+
+## Step 2: Ready-to-Use Context Template
+
+Once your notes are saved, here's your `prepare_context` template:
+
+```json
+{{
+  "project_path": "[your project path]",
+  "dry_run": true,
+  "output_name": "{task_title}_context.md",
+  "files": [
+    {{"path": "src/main.py", "note": "Entry point"}},
+    {{"path": "config/settings.py", "note": "Configuration"}}
+  ],
+  "context_dumps": [
+    {{"file": ".llm_prep_notes/{task_title}_notes.md", "title": "Analysis Notes"}}
+  ],
+  "general_note_files": [
+    ".llm_prep_notes/additional_notes.md"
+  ],
+  "tree_max_depth": 3
+}}
+```
+
+## Step 3: Two-Phase Execution
+
+1. **Preview**: Run with `dry_run: true` to verify what will be included
+2. **Generate**: If preview looks good, run with `dry_run: false`
+
+## Tips:
+- Replace placeholder paths with your actual relative paths
+- Add/remove files as needed for your specific task
+- Adjust tree_max_depth if you need deeper directory structure
+
+What information would you like to capture in your notes?
 """
 
 @mcp.prompt()

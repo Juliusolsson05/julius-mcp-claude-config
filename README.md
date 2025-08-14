@@ -79,6 +79,36 @@ In Claude Code:
 # Upload to Claude.ai for deep analysis
 ```
 
+### Notes-first workflow (recommended)
+
+```bash
+# 1) Create notes as markdown
+/mcp llm-prep create_debug_notes {
+  "project_path": "...",
+  "filename": "celery_issue_timeline.md",
+  "content": "# Celery Race Condition — Timeline\n..."
+}
+
+# 2) Generate focused context
+/mcp llm-prep prepare_context {
+  "project_path": "...",
+  "output_name": "celery_context.md",
+  "files": [
+    {"path":"kre/celery_app.py","note":"Main config, lazy import issue"},
+    {"path":"kre/tasks.py","note":"Manual import bridge"}
+  ],
+  "context_dumps": [
+    {"file": "CELERY_WRAPPER_DOCUMENTATION.md", "title": "Wrapper Docs"},
+    {"file": ".llm_prep_notes/celery_issue_timeline.md", "title": "Issue Timeline"}
+  ],
+  "general_note_files": [
+    ".llm_prep_notes/celery_testing_results.md"
+  ]
+}
+```
+
+> **Tip:** Use `update_tree_ignore(action="auto")` to auto-prune the tree. `tree -I` doesn't support `!` negation; don't try patterns like `!keep_this.md`.
+
 ### Manual Workflow
 
 ```python

@@ -25,6 +25,7 @@ class LLMContextPrep:
         self.general_notes: List[str] = []
         self.context_dumps: List[Tuple[str, str]] = []  # (title, content)
         self.tree_ignore = self.DEFAULT_TREE_IGNORE
+        self.tree_max_depth = 3  # Default tree depth
         
     def _find_project_root(self) -> Path:
         """Find project root by looking for key files."""
@@ -95,7 +96,7 @@ class LLMContextPrep:
     def _generate_tree(self) -> str:
         """Generate project tree structure with focus markers."""
         # Try to use the tree command first
-        cmd = ['tree', '-I', self.tree_ignore, '--charset', 'ascii']
+        cmd = ['tree', '-L', str(self.tree_max_depth), '-I', self.tree_ignore, '--charset', 'ascii']
         
         try:
             result = subprocess.run(
@@ -152,7 +153,7 @@ class LLMContextPrep:
         def walk_dir(path: Path, prefix: str = "", is_last: bool = True, depth: int = 0):
             """Recursively walk directory and generate tree lines."""
             # Limit depth to prevent huge trees
-            if depth > 5:
+            if depth >= self.tree_max_depth:
                 return
             
             if path.name.startswith('.') and path.name not in ['.env', '.gitignore']:
@@ -281,14 +282,6 @@ class LLMContextPrep:
         sections.append("```")
         sections.append("")
         
-        # General Notes (if any, put them early for visibility)
-        if self.general_notes:
-            sections.append("## General Context & Notes")
-            sections.append("")
-            for i, note in enumerate(self.general_notes, 1):
-                sections.append(f"**Note {i}:** {note}")
-                sections.append("")
-        
         # Context Dumps (before file contents for important context)
         if self.context_dumps:
             sections.append("## Context & Analysis Documents")
@@ -308,6 +301,16 @@ class LLMContextPrep:
             
             for file_path, note in self.focus_files:
                 sections.append(self._format_file_content(file_path, note))
+        
+        # General Notes (moved to end)
+        if self.general_notes:
+            sections.append("## General Context & Notes")
+            sections.append("")
+            for i, note in enumerate(self.general_notes, 1):
+                sections.append(f"**Note {i}:**")
+                sections.append("")
+                sections.append(note)
+                sections.append("")
         
         # Footer
         sections.append("---")
