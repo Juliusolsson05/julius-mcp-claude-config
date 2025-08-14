@@ -1,0 +1,18 @@
+# MCP SDK - Core requirement
+mcp[cli]>=1.9.0
+
+# Optional: For enhanced features
+python-dotenv>=1.0.0  # Environment variable management
+aiofiles>=24.0.0      # Async file operations
+
+# Optional: For SSE/HTTP transport (uncomment if needed)
+ fastapi>=0.115.0
+ uvicorn>=0.34.0
+ sse-starlette>=2.3.0
+ httpx>=0.28.0
+
+# Development dependencies (optional)
+ pytest>=8.0.0
+ pytest-asyncio>=0.24.0
+ black>=24.0.0
+ ruff>=0.8.0

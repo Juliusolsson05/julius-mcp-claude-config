@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  llm-context-prep:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: llm-context-prep-mcp:latest
+    container_name: llm-context-prep-mcp
+    
+    # For stdio MCP server mode
+    stdin_open: true
+    tty: true
+    
+    volumes:
+      # Mount the workspace directory
+      - ${WORKSPACE_DIR:-./workspace}:/workspace
+      # Optional: Mount additional directories
+      # - ${HOME}/projects:/projects:ro
+    
+    environment:
+      # MCP Configuration
+      - MCP_DEBUG=${MCP_DEBUG:-false}
+      - MCP_MAX_FILE_SIZE=${MCP_MAX_FILE_SIZE:-10485760}
+      - MCP_MAX_CONTEXT_SIZE=${MCP_MAX_CONTEXT_SIZE:-52428800}
+      
+      # Docker mode flag
+      - MCP_DOCKER_MODE=true
+      - MCP_WORKSPACE_DIR=/workspace
+      
+      # Optional: Additional configuration
+      - MCP_ALLOWED_EXTENSIONS=${MCP_ALLOWED_EXTENSIONS:-.py,.js,.ts,.md,.txt,.json,.yaml,.yml}
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Need write access for context reports
+    
+    # Network configuration (if needed for SSE/HTTP mode)
+    # ports:
+    #   - "8080:8080"
+    # networks:
+    #   - mcp-network
+
+# Optional: Network configuration for HTTP/SSE mode
+# networks:
+#   mcp-network:
+#     driver: bridge
+
+# Optional: Named volumes for persistent storage
+volumes:
+  workspace:
+    driver: local

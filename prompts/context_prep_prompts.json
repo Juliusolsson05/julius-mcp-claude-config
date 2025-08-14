@@ -1,0 +1,84 @@
+{
+  "prompts": [
+    {
+      "name": "debug_workflow",
+      "description": "Complete workflow for debugging an issue with context preparation",
+      "arguments": [
+        {
+          "name": "issue_description",
+          "description": "Description of the issue to debug",
+          "required": true
+        },
+        {
+          "name": "project_path",
+          "description": "Path to the project (defaults to current directory)",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "feature_implementation",
+      "description": "Prepare context for implementing a new feature",
+      "arguments": [
+        {
+          "name": "feature_description",
+          "description": "Description of the feature to implement",
+          "required": true
+        },
+        {
+          "name": "project_path",
+          "description": "Path to the project",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "code_review",
+      "description": "Prepare context for code review",
+      "arguments": [
+        {
+          "name": "pr_description",
+          "description": "Description of the changes to review",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "performance_analysis",
+      "description": "Prepare context for performance optimization",
+      "arguments": [
+        {
+          "name": "performance_issue",
+          "description": "Description of the performance problem",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "templates": {
+    "debug_workflow": {
+      "content": "# Debug Workflow: {{issue_description}}\n\n## Instructions for Preparing Debug Context\n\nI need to debug an issue: {{issue_description}}\n\nPlease follow this systematic approach:\n\n### Step 1: Create Debug Notes\nFirst, let me gather all the error information. Please:\n1. Create a markdown file with all error logs, stack traces, and system information\n2. Use `create_debug_notes` to save this to `.llm_prep_notes/debug_{{timestamp}}.md`\n3. Include:\n   - Full error messages and stack traces\n   - Steps to reproduce\n   - System/environment information\n   - What has been tried so far\n\n### Step 2: Identify Relevant Files\nBased on the error, identify:\n1. The files directly mentioned in error messages\n2. Related configuration files\n3. Dependencies and imports\n4. Test files that might help understand expected behavior\n\n### Step 3: Prepare Comprehensive Context\nUse `prepare_context` with:\n- All identified files with descriptive notes\n- The debug notes as a context dump\n- Any relevant documentation files\n- Output name: `debug_{{issue_short_name}}_{{date}}.md`\n\n### Step 4: Review and Iterate\nOnce the context is prepared:\n1. Review if all necessary information is included\n2. Add any missing files or notes\n3. The document will be in `context_reports/`\n4. Upload to Claude.ai for deep analysis\n\nLet's start by understanding the error better. Can you show me the error messages and logs?"
+    },
+    "feature_implementation": {
+      "content": "# Feature Implementation: {{feature_description}}\n\n## Instructions for Preparing Feature Context\n\nI need to implement: {{feature_description}}\n\n### Step 1: Requirements Documentation\nFirst, create comprehensive requirements:\n1. Create a markdown file with:\n   - Feature specifications\n   - User stories or use cases\n   - Acceptance criteria\n   - Technical constraints\n2. Save using `create_debug_notes` to `.llm_prep_notes/feature_requirements.md`\n\n### Step 2: Architecture Analysis\nIdentify the architecture impact:\n1. Which modules/components need changes?\n2. What new files need to be created?\n3. What existing files need modification?\n4. Any database or API changes?\n\n### Step 3: Gather Context Files\nCollect relevant files:\n- Existing similar features for reference\n- Base classes or interfaces to extend\n- Configuration files\n- Test files to understand testing patterns\n- Documentation that needs updating\n\n### Step 4: Generate Context Document\nUse `prepare_context` with:\n- All identified files with notes about their role\n- Requirements as context dump\n- Any design documents\n- Output: `feature_{{feature_name}}_context.md`\n\n### Step 5: Implementation Planning\nThe context document will help:\n1. Plan the implementation approach\n2. Identify potential challenges\n3. Ensure consistency with existing code\n4. Upload to Claude.ai for implementation guidance\n\nWhat are the key requirements for this feature?"
+    },
+    "code_review": {
+      "content": "# Code Review Context: {{pr_description}}\n\n## Preparing Context for Code Review\n\nChanges to review: {{pr_description}}\n\n### Step 1: Document Changes\nCreate a summary of changes:\n1. List all modified files\n2. Describe the purpose of each change\n3. Note any breaking changes or migrations needed\n4. Save to `.llm_prep_notes/review_changes.md`\n\n### Step 2: Gather Changed Files\nCollect all files that were:\n- Added (with note 'New file')\n- Modified (with note 'Modified - describe changes')\n- Related but unchanged (with note 'Context - related to changes')\n\n### Step 3: Include Test Coverage\nAdd test files:\n- New tests added\n- Modified tests\n- Tests that verify the changes\n\n### Step 4: Create Review Context\nUse `prepare_context` with:\n- All changed files\n- Change summary as context dump\n- Related documentation\n- Output: `review_{{pr_number}}_context.md`\n\n### Step 5: Review Checklist\nThe context will help review:\n- Code quality and standards\n- Test coverage\n- Performance implications\n- Security considerations\n- Documentation updates\n\nWhich files were changed in this PR?"
+    },
+    "performance_analysis": {
+      "content": "# Performance Analysis: {{performance_issue}}\n\n## Preparing Context for Performance Optimization\n\nPerformance issue: {{performance_issue}}\n\n### Step 1: Performance Metrics\nDocument the performance problem:\n1. Current performance metrics\n2. Expected/target performance\n3. When the issue occurs (load, specific operations, etc.)\n4. Profiling data if available\n5. Save to `.llm_prep_notes/performance_metrics.md`\n\n### Step 2: Identify Bottlenecks\nGather files related to:\n- Slow operations or endpoints\n- Database queries\n- Algorithm implementations\n- Caching logic\n- Configuration affecting performance\n\n### Step 3: System Context\nInclude:\n- System architecture documentation\n- Current optimization attempts\n- Infrastructure configuration\n- Related monitoring/logging\n\n### Step 4: Generate Analysis Context\nUse `prepare_context` with:\n- Performance-critical files\n- Metrics documentation as context dump\n- Architecture diagrams if available\n- Output: `perf_analysis_{{issue}}_context.md`\n\n### Step 5: Optimization Strategy\nThe context will help:\n1. Identify optimization opportunities\n2. Evaluate different approaches\n3. Predict impact of changes\n4. Plan implementation\n\nWhat specific performance metrics are you seeing?"
+    }
+  },
+  "instructions": {
+    "general": "## LLM Context Preparation MCP Server\n\nThis MCP server helps you prepare comprehensive context documents for uploading to Claude.ai or other web-based LLM interfaces when dealing with complex issues that exceed token limits.\n\n### Key Concepts\n\n1. **Two-Stage Process**: \n   - First, create detailed notes/documentation\n   - Then, generate comprehensive context documents\n\n2. **Organization**:\n   - Debug notes go in `.llm_prep_notes/`\n   - Context documents go in `context_reports/`\n   - Project config saved in `.llm_prep_config.json`\n\n3. **Best Practices**:\n   - Always create notes BEFORE generating context\n   - Include error logs as context dumps (not inline)\n   - Add descriptive notes to each file\n   - Use meaningful output filenames with dates\n\n### Available Tools\n\n- `prepare_context`: Main tool for generating context documents\n- `create_debug_notes`: Create markdown notes for context dumps\n- `set_project_config`: Configure project settings\n- `list_recent_contexts`: See recently generated contexts\n- `clean_temp_notes`: Clean up old temporary notes\n\n### Typical Workflow\n\n1. Understand the problem\n2. Create detailed notes/logs\n3. Identify relevant files\n4. Generate context document\n5. Upload to web LLM for analysis",
+    "tips": [
+      "For large error logs (100+ lines), always use create_debug_notes first",
+      "Include configuration files when debugging runtime issues",
+      "Add test files to understand expected behavior",
+      "Use descriptive notes for each file to explain its relevance",
+      "Keep context documents under 2MB for best performance",
+      "Archive old context reports periodically",
+      "Use project config to set default ignore patterns"
+    ]
+  }
+}
