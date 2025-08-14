@@ -300,9 +300,9 @@ def main():
     parser = argparse.ArgumentParser(description="LLM Context Prep MCP Server")
     parser.add_argument(
         "--transport",
-        choices=["stdio", "sse", "http"],
-        default="sse",
-        help="Transport type (default: sse)"
+        choices=["stdio"],
+        default="stdio",
+        help="Transport type (stdio only)"
     )
     parser.add_argument(
         "--port",
@@ -318,11 +318,7 @@ def main():
     
     args = parser.parse_args()
     
-    if args.transport in {"http", "sse"}:
-        # Use the built-in FastMCP servers (compatible with mcp==1.12.x)
-        mcp.run(transport=args.transport, host=args.host, port=args.port)
-    else:
-        mcp.run(transport="stdio")
+    mcp.run(transport="stdio")
 
 if __name__ == "__main__":
     main()

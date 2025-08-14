@@ -1,23 +1,13 @@
-# MCP SDK - Core requirement
+# Core
 mcp[cli]>=1.9.0
+pydantic>=2.7.0
 
-# Optional: For enhanced features
-python-dotenv
-aiofiles
+# Optional helpers
+python-dotenv>=1.0.0
+aiofiles>=24.0.0
 
-# SSE/HTTP transport dependencies
-fastapi
-uvicorn
-sse-starlette
-starlette
-httpx
-
-# FastMCP tool models
-pydantic
-
-# Development dependencies (optional)
-pytest
-pytest-asyncio
-black
-ruff
-
+# Dev
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+black>=24.0.0
+ruff>=0.8.0
