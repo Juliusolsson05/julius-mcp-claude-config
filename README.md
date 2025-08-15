@@ -61,6 +61,8 @@ You should see `llm-prep` in the list of connected servers.
 6. **`get_tree_ignore`** - View current ignore patterns and see suggested additions  
 7. **`update_tree_ignore`** - Set/add/remove/auto-configure tree ignore patterns with validation and history  
 8. **`analyze_project_structure`** - Scan the project to detect type, large directories, and propose optimal patterns
+9. **`chunk_path_for_llm`** - Split a folder (or glob) into multiple context markdown files by line limit.
+   Inputs: project_path, path, ignore, line_limit, output_dir, output_basename, tree_ignore, tree_max_depth, dry_run
 
 ### Workflow Example: Debugging an Issue
 

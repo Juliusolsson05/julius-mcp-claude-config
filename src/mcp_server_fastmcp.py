@@ -6,6 +6,8 @@ Provides tools for preparing comprehensive context documents for LLMs
 
 import os
 import logging
+import fnmatch
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
@@ -94,6 +96,25 @@ class UpdateTreeIgnoreInput(BaseModel):
 class AnalyzeProjectInput(BaseModel):
     project_path: str = Field(description="Path to the project root")
 
+class ChunkPathInput(BaseModel):
+    """
+    Split a directory (or glob) into multiple context markdown chunks by line count.
+    Output files are named <output_basename>_1.md, _2.md, ... inside output_dir.
+    The tree shown in each file is relative to the provided 'path'.
+    """
+    project_path: str = Field(description="Absolute path to the project root.")
+    path: str = Field(description="Directory (preferred) or glob relative to project root, e.g. 'kre/services'.")
+    ignore: Optional[Union[str, List[str]]] = Field(
+        default=None,
+        description="Ignore patterns (list or pipe/comma-separated). Examples: ['__pycache__','*.pyc','tests/*']"
+    )
+    line_limit: int = Field(default=3300, description="Max ~lines per output markdown (soft limit).")
+    output_dir: Optional[str] = Field(default=None, description="Directory (relative to project root) to write files.")
+    output_basename: Optional[str] = Field(default=None, description="Base name for outputs, e.g. 'services_summary'.")
+    tree_ignore: Optional[str] = Field(default=None, description="Pipe-separated patterns to ignore in tree rendering.")
+    tree_max_depth: int = Field(default=3, description="Max depth for the tree section.")
+    dry_run: bool = Field(default=False, description="If true, do not write files; just report plan.")
+
 # Helper functions for backward compatibility and path handling
 def _coerce_file_spec(d: dict) -> FileSpec:
     """Convert dict to FileSpec with synonym support"""
@@ -129,6 +150,87 @@ def _fix_path(project_path: Path, p: str) -> Path:
             # Fall back to original absolute (will fail later if nonexistent)
             return raw
     return project_path / raw
+
+# Helper functions for chunk_path_for_llm tool
+def _normalize_ignore_patterns(ignore: Optional[Union[str, List[str]]]) -> List[str]:
+    if not ignore:
+        return []
+    if isinstance(ignore, str):
+        if ignore.strip().lower() in {"none", "(none)", "false", "no", ""}:
+            return []
+        parts = re.split(r"[|,\n]+", ignore)
+    else:
+        parts = ignore
+    return [p.strip() for p in parts if p and p.strip()]
+
+def _pattern_match(path: Path, root: Path, patterns: List[str]) -> bool:
+    """
+    Match path against glob-like patterns. We try:
+      - as posix relative to 'root'
+      - basename
+      - full posix path
+    """
+    if not patterns:
+        return False
+    try:
+        rel = path.relative_to(root).as_posix()
+    except Exception:
+        rel = path.as_posix()
+    name = path.name
+    full = path.as_posix()
+    for pat in patterns:
+        # Allow simple substrings as a convenience, but prefer fnmatch for globs
+        if fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(full, pat) or pat in rel:
+            return True
+    return False
+
+def _gather_files_for_chunking(project_path: Path, target_root: Path, patterns: List[str]) -> List[Path]:
+    """
+    Collect candidate files under target_root, honoring ignore patterns and server_config
+    extension/size limits. Sorted by path for determinism.
+    """
+    files: List[Path] = []
+    # if 'target_root' is actually a glob pattern, expand it from the project root
+    if ("*" in target_root.as_posix()) or ("?" in target_root.as_posix()) or ("[" in target_root.as_posix()):
+        for p in project_path.glob(target_root.as_posix()):
+            if p.is_file():
+                if not server_config.is_file_allowed(p) or not server_config.is_file_size_allowed(p):
+                    continue
+                if _pattern_match(p, project_path, patterns):
+                    continue
+                files.append(p.resolve())
+            elif p.is_dir():
+                for q in p.rglob("*"):
+                    if q.is_file():
+                        if not server_config.is_file_allowed(q) or not server_config.is_file_size_allowed(q):
+                            continue
+                        if _pattern_match(q, project_path, patterns) or _pattern_match(q, p, patterns):
+                            continue
+                        files.append(q.resolve())
+    else:
+        root = target_root
+        if root.is_file():
+            if server_config.is_file_allowed(root) and server_config.is_file_size_allowed(root):
+                if not _pattern_match(root, project_path, patterns) and not _pattern_match(root, root.parent, patterns):
+                    files.append(root.resolve())
+        elif root.is_dir():
+            for p in root.rglob("*"):
+                if p.is_file():
+                    if not server_config.is_file_allowed(p) or not server_config.is_file_size_allowed(p):
+                        continue
+                    if _pattern_match(p, project_path, patterns) or _pattern_match(p, root, patterns):
+                        continue
+                    files.append(p.resolve())
+    files = sorted(list(dict.fromkeys(files)))
+    return files
+
+def _count_lines(path: Path) -> int:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            # sum(1 for _ in f) is memory-friendly
+            return sum(1 for _ in f)
+    except Exception:
+        return 0
 
 # Tools
 @mcp.tool()
@@ -501,6 +603,123 @@ async def analyze_project_structure(input: AnalyzeProjectInput) -> str:
     except Exception as e:
         logger.error(f"analyze_project_structure error: {e}")
         return f"❌ Error analyzing project: {e}"
+
+@mcp.tool()
+async def chunk_path_for_llm(input: ChunkPathInput) -> str:
+    """
+    Split a directory (or glob) into multiple context markdown chunks by line-count.
+    Each chunk renders a tree relative to the provided 'path' and the files are included
+    exactly like in prepare_context (same headers, numbered lines, etc.).
+    """
+    try:
+        project_path = Path(input.project_path).resolve()
+        config = load_project_config(project_path)
+
+        # Resolve the target root (dir or glob), relative to project
+        raw = Path(input.path)
+        target_root = (project_path / raw).resolve() if not raw.is_absolute() else raw.resolve()
+
+        if not target_root.exists() and ("*" not in target_root.as_posix()):
+            return f"❌ Path not found: {target_root}"
+
+        # Ignore patterns for selection (NOT the same as tree_ignore, though we apply them to tree too)
+        ignore_patterns = _normalize_ignore_patterns(input.ignore)
+
+        # Tree ignore for rendering
+        base_tree_ignore = input.tree_ignore or config.tree_ignore or ""
+        tree_ign_list = split_patterns(base_tree_ignore)
+        # merge input ignore patterns into tree ignore so the tree hides them as well
+        merged_tree_ignore = join_patterns(tree_ign_list + ignore_patterns) if ignore_patterns else base_tree_ignore
+
+        # Gather candidate files
+        files = _gather_files_for_chunking(project_path, target_root, ignore_patterns)
+        if not files:
+            return "⚠️ No matching files after applying ignores/filters."
+
+        # Plan chunking
+        line_limit = max(500, int(input.line_limit))  # guardrails: don't let it be too tiny
+        safety_margin = 300  # room for headers, tables, tree, footer
+        per_file_overhead = 4  # section header + separator + trailing newline(s)
+
+        # Output directory & base name
+        out_dir = Path(input.output_dir).resolve() if input.output_dir and Path(input.output_dir).is_absolute() \
+            else (project_path / (input.output_dir or config.output_dir)).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        default_base = (Path(input.path).name or "chunk")
+        base_name = input.output_basename or (default_base.rstrip("/").rstrip("\\") + "_summary")
+
+        # Build chunks
+        chunks: List[List[Path]] = []
+        current: List[Path] = []
+        used = 0
+
+        for p in files:
+            lines = _count_lines(p)
+            # if starting a fresh chunk, allow a single huge file as its own chunk
+            if not current and (lines + per_file_overhead > (line_limit - safety_margin)):
+                chunks.append([p])
+                used = 0
+                continue
+
+            # would adding this file overflow the chunk?
+            if used + lines + per_file_overhead > (line_limit - safety_margin):
+                if current:
+                    chunks.append(current)
+                current = [p]
+                used = lines + per_file_overhead
+            else:
+                current.append(p)
+                used += lines + per_file_overhead
+
+        if current:
+            chunks.append(current)
+
+        # Dry run report
+        if input.dry_run:
+            report = [
+                f"🧪 DRY RUN — chunk plan for {target_root}",
+                f"Files considered: {len(files)}",
+                f"line_limit={line_limit}, safety_margin={safety_margin}, tree_max_depth={input.tree_max_depth}",
+                f"Output dir: {out_dir}",
+                "",
+            ]
+            for i, group in enumerate(chunks, 1):
+                approx = sum(_count_lines(f) + per_file_overhead for f in group) + safety_margin
+                rp = "\n  - ".join([str(f.relative_to(project_path)) for f in group])
+                report.append(f"Chunk {i} (~{approx} lines):\n  - {rp}")
+            return "\n".join(report)
+
+        # Write chunks using LLMContextPrep so formatting/tree are identical
+        outputs: List[str] = []
+        for i, group in enumerate(chunks, 1):
+            # Make the tree relative to the requested path (subtree)
+            # If 'target_root' is a file or a glob, show tree from its parent
+            sub_root = target_root if target_root.is_dir() else target_root.parent
+            prep = LLMContextPrep(project_root=sub_root if sub_root.exists() else project_path)
+            prep.tree_ignore = merged_tree_ignore
+            prep.tree_max_depth = input.tree_max_depth
+
+            for fpath in group:
+                # absolute ok; LLMContextPrep will compute relative to project_root
+                prep.add_file(str(fpath))
+
+            filename = f"{base_name}_{i}.md"
+            prep.save(str(out_dir / filename))
+            outputs.append(str((out_dir / filename).relative_to(project_path)))
+
+        summary = [
+            f"✅ Created {len(outputs)} chunk(s) from {target_root}",
+            f"Output directory: {out_dir.relative_to(project_path)}",
+            "",
+            "Files:",
+            *[f"  - {o}" for o in outputs]
+        ]
+        return "\n".join(summary)
+
+    except Exception as e:
+        logger.error(f"chunk_path_for_llm error: {e}")
+        return f"❌ Error: {e}"
 
 # Prompts
 @mcp.prompt()
