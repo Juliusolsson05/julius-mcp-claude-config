@@ -837,25 +837,35 @@ def main():
     parser = argparse.ArgumentParser(description="LLM Context Prep MCP Server")
     parser.add_argument(
         "--transport",
-        choices=["stdio"],
-        default="stdio",
-        help="Transport type (stdio only)"
+        choices=["stdio", "http", "sse"],
+        default=os.getenv("MCP_TRANSPORT", "stdio"),
+        help="Transport type: stdio (default), http, or sse"
     )
     parser.add_argument(
         "--port",
         type=int,
         default=int(os.getenv("MCP_SERVER_PORT", "8847")),
-        help="Port for SSE server (default: 8847 or MCP_SERVER_PORT env)"
+        help="Port for HTTP/SSE server (default: 8847 or MCP_SERVER_PORT env)"
     )
     parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="Host for SSE server (default: 127.0.0.1)"
+        default=os.getenv("MCP_SERVER_HOST", "127.0.0.1"),
+        help="Host for HTTP/SSE server (default: 127.0.0.1 or MCP_SERVER_HOST env)"
     )
     
     args = parser.parse_args()
     
-    mcp.run(transport="stdio")
+    # Run with appropriate transport mode
+    if args.transport == "stdio":
+        # STDIO mode doesn't need host/port
+        mcp.run(transport="stdio")
+    else:
+        # HTTP/SSE modes use host and port
+        mcp.run(
+            transport=args.transport,
+            host=args.host,
+            port=args.port
+        )
 
 if __name__ == "__main__":
     main()
