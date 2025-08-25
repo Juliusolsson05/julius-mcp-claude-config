@@ -1,0 +1,21 @@
+{
+  "servers": [
+    {
+      "name": "llm-prep",
+      "type": "local",
+      "description": "LLM Context Preparation - Helps prepare comprehensive context documents",
+      "python_path": "venv/bin/python",
+      "script_path": "src/mcp_server_fastmcp.py",
+      "args": ["--transport", "stdio"]
+    },
+    {
+      "name": "ddg-search",
+      "type": "submodule",
+      "description": "DuckDuckGo Search - Web search capabilities",
+      "submodule_path": "submodules/duckduckgo-mcp-server",
+      "python_path": "submodules/duckduckgo-mcp-server/venv/bin/python",
+      "module": "duckduckgo_mcp_server.server",
+      "args": []
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+[submodule "submodules/duckduckgo-mcp-server"]
+	path = submodules/duckduckgo-mcp-server
+	url = https://github.com/nickclyde/duckduckgo-mcp-server.git

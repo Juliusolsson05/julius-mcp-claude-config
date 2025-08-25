@@ -6,58 +6,64 @@ PIP ?= venv/bin/pip
 .PHONY: help
 help:
 	@echo ""
-	@echo "LLM Context Prep – Make targets"
-	@echo "--------------------------------"
-	@echo "make bootstrap        Create venv and install deps"
-	@echo "make claude-stdio-cmd Print STDIO add command (ask to copy)"
-	@echo "make claude-add       Execute the STDIO add command now"
-	@echo "make test             Run quick test script"
-	@echo "make lint             Run ruff"
-	@echo "make fmt              Run black"
-	@echo "make doctor           Sanity checks (python, claude, pkgs)"
-	@echo "make clean            Remove caches"
-	@echo "make distclean        Remove venv + caches"
+	@echo "Julius MCP Collection – Commands"
+	@echo "================================="
+	@echo ""
+	@echo "🚀 QUICK START:"
+	@echo "  make setup           → Set up everything (all servers + dependencies)"
+	@echo "  make install-cmd     → Get the Claude install command (copies to clipboard)"
+	@echo ""
+	@echo "📦 Individual Commands:"
+	@echo "  make install-llm     → Get install command for llm-prep only"
+	@echo "  make config          → Generate claude_desktop_config.json content"
+	@echo "  make list            → List all managed MCP servers"
+	@echo ""
+	@echo "🛠️  Development:"
+	@echo "  make test            → Run tests"
+	@echo "  make lint            → Run linter"
+	@echo "  make fmt             → Format code"
+	@echo "  make doctor          → Check environment"
+	@echo "  make clean           → Clean caches"
+	@echo "  make reset           → Full reset (remove all venvs)"
 	@echo ""
 
-# -------- Bootstrap --------
-.PHONY: bootstrap
-bootstrap:
-	@echo "🐍 Creating venv (if needed) and installing requirements..."
+# -------- Main Setup --------
+.PHONY: setup
+setup:
+	@echo "🚀 Setting up Julius MCP Collection..."
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📦 [1/3] Initializing git submodules..."
+	@git submodule update --init --recursive
+	@echo "🐍 [2/3] Setting up llm-prep server..."
 	@if [ ! -d venv ]; then python3 -m venv venv; fi
 	@$(PIP) install --upgrade pip >/dev/null
-	@$(PIP) install -r requirements.txt
-	@echo "✅ Done."
+	@$(PIP) install -r requirements.txt >/dev/null
+	@echo "🔍 [3/3] Setting up DuckDuckGo search server..."
+	@cd submodules/duckduckgo-mcp-server && \
+		if [ ! -d venv ]; then python3 -m venv venv; fi && \
+		venv/bin/pip install --upgrade pip >/dev/null && \
+		venv/bin/pip install -e . >/dev/null
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ Setup complete! Run 'make install-cmd' to get the installation command."
 
-# -------- Claude STDIO command (with clipboard prompt) --------
-.PHONY: claude-stdio-cmd
-claude-stdio-cmd:
-	@BASE=$$(pwd -P); \
-	if [ -x venv/bin/python ]; then PY="$$BASE/venv/bin/python"; \
-	elif command -v python3 >/dev/null 2>&1; then PY=$$(command -v python3); \
-	else PY=$$(command -v python); fi; \
-	SCRIPT="$$BASE/src/mcp_server_fastmcp.py"; \
-	CMD="claude mcp add llm-prep -- \"$$PY\" \"$$SCRIPT\" --transport stdio"; \
-	echo "$$CMD"; \
-	printf "Copy to clipboard? [y/N] "; \
-	read ans; \
-	case "$$ans" in \
-	  y|Y) \
-	    if command -v pbcopy >/dev/null 2>&1; then printf "%s" "$$CMD" | pbcopy && echo "✅ Copied to clipboard (pbcopy)."; \
-	    elif command -v xclip >/dev/null 2>&1; then printf "%s" "$$CMD" | xclip -selection clipboard && echo "✅ Copied to clipboard (xclip)."; \
-	    elif command -v wl-copy >/dev/null 2>&1; then printf "%s" "$$CMD" | wl-copy && echo "✅ Copied to clipboard (wl-copy)."; \
-	    else echo "⚠️  No clipboard tool found (pbcopy/xclip/wl-copy)."; fi ;; \
-	  *) echo "Skipped copying."; ;; \
-	esac
+# -------- Install Commands --------
+.PHONY: install-cmd
+install-cmd:
+	@$(PY) scripts/generate_install_cmd.py --all
 
-# -------- Directly add to Claude (no copy/paste needed) --------
-.PHONY: claude-add
-claude-add:
-	@BASE=$$(pwd -P); \
-	if [ -x venv/bin/python ]; then PY="$$BASE/venv/bin/python"; \
-	elif command -v python3 >/dev/null 2>&1; then PY=$$(command -v python3); \
-	else PY=$$(command -v python); fi; \
-	SCRIPT="$$BASE/src/mcp_server_fastmcp.py"; \
-	claude mcp add llm-prep -- "$$PY" "$$SCRIPT" --transport stdio
+.PHONY: install-llm
+install-llm:
+	@$(PY) scripts/generate_install_cmd.py --server llm-prep
+
+# -------- List Servers --------
+.PHONY: list
+list:
+	@$(PY) scripts/generate_install_cmd.py --list
+
+# -------- Generate Config --------
+.PHONY: config
+config:
+	@$(PY) scripts/generate_claude_config.py
 
 # -------- Testing / Dev --------
 .PHONY: test
@@ -83,6 +89,7 @@ doctor:
 	@echo "🔎 Checking required packages..."
 	@$(PY) -c "import mcp, pydantic; print('✅ MCP & Pydantic OK')"
 
+
 # -------- Cleanup --------
 .PHONY: clean
 clean:
@@ -90,7 +97,9 @@ clean:
 	@find . -name ".pytest_cache" -type d -prune -exec rm -rf {} + || true
 	@echo "🧹 Cleaned caches."
 
-.PHONY: distclean
-distclean: clean
+.PHONY: reset
+reset: clean
+	@echo "🗑️  Removing all virtual environments..."
 	@rm -rf venv
-	@echo "🧹 Removed venv."
+	@rm -rf submodules/*/venv
+	@echo "✅ Full reset complete. Run 'make setup' to start fresh."
