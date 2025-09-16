@@ -115,6 +115,22 @@ class ChunkPathInput(BaseModel):
     tree_max_depth: int = Field(default=3, description="Max depth for the tree section.")
     dry_run: bool = Field(default=False, description="If true, do not write files; just report plan.")
 
+class SaveTokensInput(BaseModel):
+    """Input model for save_tokens tool - rewrites old context reports to cheaper format"""
+    project_path: str = Field(description="Path to the project root")
+    before: Optional[str] = Field(
+        default="2025-08-22",
+        description="Cutoff date (YYYY-MM-DD). Files strictly older than this are rewritten."
+    )
+    glob: Optional[str] = Field(
+        default="**/*.md",
+        description="Glob under context_reports/ to scan"
+    )
+    dry_run: bool = Field(
+        default=True,
+        description="Preview changes without writing"
+    )
+
 # Helper functions for backward compatibility and path handling
 def _coerce_file_spec(d: dict) -> FileSpec:
     """Convert dict to FileSpec with synonym support"""
@@ -719,6 +735,62 @@ async def chunk_path_for_llm(input: ChunkPathInput) -> str:
 
     except Exception as e:
         logger.error(f"chunk_path_for_llm error: {e}")
+        return f"❌ Error: {e}"
+
+@mcp.tool()
+async def save_tokens(input: SaveTokensInput) -> str:
+    """
+    Rewrite old context_reports to cheaper line-number format.
+    Converts leading padded numbers like '   1| ' to '1|' (no padding, no trailing space).
+    Only touches files modified before the given cutoff date.
+    """
+    try:
+        project_path = Path(input.project_path).resolve()
+        reports_dir = project_path / "context_reports"
+        if not reports_dir.exists():
+            return "⚠️ No context_reports/ directory found."
+
+        # Parse cutoff date (YYYY-MM-DD)
+        cutoff = datetime.strptime(input.before, "%Y-%m-%d")
+        cutoff_ts = cutoff.timestamp()
+
+        # Pattern: start-of-line, up to 6 spaces, digits, pipe, optional single space
+        # Replace with: digits + '|' (no trailing space)
+        pattern = re.compile(r"(?m)^\s{0,6}(\d+)\|\s")
+        
+        total_files = 0
+        touched = 0
+        total_chars_saved = 0
+
+        for md in reports_dir.glob(input.glob):
+            if not md.is_file():
+                continue
+            total_files += 1
+            try:
+                if md.stat().st_mtime >= cutoff_ts:
+                    continue  # not older than cutoff
+
+                original = md.read_text(encoding="utf-8", errors="ignore")
+                new = pattern.sub(r"\1|", original)
+                if new != original:
+                    touched += 1
+                    saved = len(original) - len(new)
+                    total_chars_saved += saved
+                    if not input.dry_run:
+                        md.write_text(new, encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Skipped {md}: {e}")
+
+        mode = "DRY RUN" if input.dry_run else "UPDATED"
+        return (
+            f"✅ save_tokens {mode}\n"
+            f"Scanned: {total_files} files under context_reports/\n"
+            f"Changed: {touched} files (cutoff < {input.before})\n"
+            f"Approx chars saved: {total_chars_saved:,}\n"
+            f"Rule: '^(spaces)(digits)|␣'  ->  'digits|'"
+        )
+    except Exception as e:
+        logger.error(f"save_tokens error: {e}")
         return f"❌ Error: {e}"
 
 # Prompts

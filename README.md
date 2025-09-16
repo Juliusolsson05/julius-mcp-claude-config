@@ -27,6 +27,25 @@ make claude-add
 # -> you should see `llm-prep`
 ```
 
+### 🪟 Windows Quick Start (no make)
+
+**PowerShell**
+```powershell
+pwsh -File .\scripts\quickstart.ps1
+# or:
+powershell -File .\scripts\quickstart.ps1
+```
+
+**CMD**
+```bat
+scripts\quickstart.bat
+```
+
+**Run server (STDIO) manually**
+```powershell
+.\venv\Scripts\python.exe src\mcp_server_fastmcp.py --transport stdio
+```
+
 ### Optional: Test locally
 
 ```bash
@@ -40,6 +59,18 @@ docker build -f docker/Dockerfile -t llm-context-prep-mcp:latest .
 claude mcp add llm-prep -- docker run -i --rm -v "$(pwd):/workspace" llm-context-prep-mcp:latest
 ```
 
+**Windows PowerShell**
+```powershell
+docker build -f docker\Dockerfile -t llm-context-prep-mcp:latest .
+claude mcp add llm-prep -- docker run -i --rm -v "${PWD}:/workspace" llm-context-prep-mcp:latest
+```
+
+**Windows CMD**
+```bat
+docker build -f docker\Dockerfile -t llm-context-prep-mcp:latest .
+claude mcp add llm-prep -- docker run -i --rm -v "%cd%:/workspace" llm-context-prep-mcp:latest
+```
+
 ### 2. Verify Installation
 
 In Claude Code:
@@ -48,6 +79,8 @@ In Claude Code:
 ```
 
 You should see `llm-prep` in the list of connected servers.
+
+> **Windows note:** If using local (non-Docker) transport, point Claude Code to `mcp-servers.windows.json` so it uses `venv\Scripts\python.exe`.
 
 ## 📖 How to Use
 
@@ -232,7 +265,7 @@ services:
     stdin_open: true
     tty: true
     volumes:
-      - ${PWD}:/workspace
+      - ${WORKSPACE_DIR:-./workspace}:/workspace
     environment:
       - MCP_DEBUG=false
 ```

@@ -142,11 +142,23 @@ class LLMContextPrep:
             ignore_patterns = self.tree_ignore.split('|')
             for pattern in ignore_patterns:
                 pattern = pattern.strip()
+                # Very small glob support: *.ext, prefix*, *suffix, exact, substring
                 if pattern.startswith('*.'):
-                    # File extension pattern
-                    if name.endswith(pattern[1:]):
+                    if name.lower().endswith(pattern[1:].lower()):
                         return True
-                elif pattern in name:
+                elif pattern.endswith('/*'):
+                    # directory prefix ignore (e.g., "dist/*")
+                    if name.lower().startswith(pattern[:-2].lower()):
+                        return True
+                elif pattern.startswith('*') and not pattern.endswith('*'):
+                    if name.lower().endswith(pattern[1:].lower()):
+                        return True
+                elif pattern.endswith('*') and not pattern.startswith('*'):
+                    if name.lower().startswith(pattern[:-1].lower()):
+                        return True
+                elif pattern.lower() == name.lower():
+                    return True
+                elif pattern.lower() in name.lower():
                     return True
             return False
         
@@ -229,11 +241,8 @@ class LLMContextPrep:
             
             if file_path.suffix.lower() in code_extensions:
                 lines = content.split('\n')
-                # Use compact format for line numbers
-                numbered_lines = []
-                for i, line in enumerate(lines, 1):
-                    # Format: line_number|content
-                    numbered_lines.append(f"{i:4d}| {line}")
+                # No padding, no trailing space after the separator — cheapest form
+                numbered_lines = [f"{i}|{line}" for i, line in enumerate(lines, 1)]
                 content = '\n'.join(numbered_lines)
             
             sections.append(content)
