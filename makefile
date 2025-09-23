@@ -32,17 +32,22 @@ help:
 setup:
 	@echo "🚀 Setting up Julius MCP Collection..."
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📦 [1/3] Initializing git submodules..."
+	@echo "📦 [1/4] Initializing git submodules..."
 	@git submodule update --init --recursive
-	@echo "🐍 [2/3] Setting up llm-prep server..."
+	@echo "🐍 [2/4] Setting up llm-prep server..."
 	@if [ ! -d venv ]; then python3 -m venv venv; fi
 	@$(PIP) install --upgrade pip >/dev/null
 	@$(PIP) install -r requirements.txt >/dev/null
-	@echo "🔍 [3/3] Setting up DuckDuckGo search server..."
+	@echo "🔍 [3/4] Setting up DuckDuckGo search server..."
 	@cd submodules/duckduckgo-mcp-server && \
 		if [ ! -d venv ]; then python3 -m venv venv; fi && \
 		venv/bin/pip install --upgrade pip >/dev/null && \
 		venv/bin/pip install -e . >/dev/null
+	@echo "📋 [4/4] Setting up Project Management (PM) server..."
+	@cd submodules/julius-pm-mcp && \
+		if [ ! -d venv ]; then python3 -m venv venv; fi && \
+		venv/bin/pip install --upgrade pip >/dev/null && \
+		venv/bin/pip install -r requirements.txt >/dev/null
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ Setup complete! Run 'make install-cmd' to get the installation command."
 
