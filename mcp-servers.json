@@ -16,6 +16,14 @@
       "python_path": "submodules/duckduckgo-mcp-server/venv/bin/python",
       "module": "duckduckgo_mcp_server.server",
       "args": []
+    },
+    {
+      "name": "pm",
+      "type": "local",
+      "description": "Project Management MCP (creates pn/ nodes)",
+      "python_path": "submodules/julius-pm-mcp/venv/bin/python",
+      "script_path": "submodules/julius-pm-mcp/src/pm_server.py",
+      "args": ["--transport", "stdio"]
     }
   ]
 }
